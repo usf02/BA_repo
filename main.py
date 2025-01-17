@@ -19,7 +19,7 @@ filtered_db.info()
 def extract_context(file_name, secret):
     secret = secret[1:-1]
     try:
-        with open(".\\Files\\" + file_name,"r", encoding='utf8') as f:
+        with open("Docs/Files/" + file_name,"r", encoding='utf8') as f:
             lines = f.readlines()
             f.close()
             
