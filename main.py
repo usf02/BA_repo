@@ -63,7 +63,6 @@ for column in ['label', 'is_template', 'in_url', 'is_multiline']:
 
 #defining the function that extracts the context of the secret (3 lines before and after) from the source file
 def extract_context(file_name, secret):
-    secret = secret[1:-1]
     try:
         with open("Docs/Files/" + file_name,"r", encoding='utf8') as f:
             lines = f.readlines()
@@ -90,16 +89,7 @@ def extract_context(file_name, secret):
         return f"Error: {e}"
 
 #apply the function to the dataset
-raw_db['context'] = raw_db.apply(lambda row: extract_context(row['file_identifier'], row['secret']), axis=1)
-
-#encoding secrets and context using a tokenizer and adding padding to ensure uniform length
-tokenizer = Tokenizer()
-tokenizer.fit_on_texts(raw_db['context'])
-df['encoded_context'] = tokenizer.texts_to_sequences(raw_db['context'])
-maxlen = max([len(seq) for seq in df['encoded_context']])
-print(maxlen)
-df['encoded_context'] = pad_sequences(df['encoded_context'], maxlen=maxlen, padding='post')
-df.info()
+df['context'] = raw_db.apply(lambda row: extract_context(row['file_identifier'], row['secret']), axis=1)
 
 #split the dataset into training and test sets
 X = df.drop(labels=['label'], axis=1)
@@ -124,10 +114,19 @@ minority_upsampled = resample(
 #joining both classes back together and shuffling
 balanced_training_set = pd.concat([majority_class, minority_upsampled], axis=0)
 balanced_training_set = shuffle(balanced_training_set, random_state=42)
+#balanced_training_set.info()
 
 # separating features and target again
-balanced_X_train = balanced_training_set.drop(columns=['label', 'encoded_context'])
+balanced_X_train = balanced_training_set.drop(columns=['label', 'context'])
 balanced_y_train = balanced_training_set.loc[:,'label']
+
+#encoding secrets and context using a tokenizer and adding padding to ensure uniform length
+tokenizer = Tokenizer()
+tokenizer.fit_on_texts(balanced_training_set['context'])
+encoded_contexts = tokenizer.texts_to_sequences(balanced_training_set['context'])
+padded_contexts = pad_sequences(encoded_contexts, padding='post')
+max_index = max([max(seq) for seq in padded_contexts])
+#balanced_X_train.info()
 
 """ #initialsizing individual models for the voting classifier
 lr = LogisticRegression(max_iter=1000, random_state=42)
@@ -151,21 +150,19 @@ y_pred = voting_clf.predict(X_test)
 #analyze the model's performance
 print(classification_report(y_test, y_pred)) """
 
-balanced_X_train_context = balanced_training_set.drop(columns=['label'])
-X_train_context = balanced_X_train_context.to_numpy()
-X_train_reshaped = X_train_context.reshape((X_train_context.shape[0], X_train_context.shape[1], 1))
-X_test_context = X_train.to_numpy()
-y_train_context = y_train.to_numpy()
+X_train_context = np.concatenate([balanced_X_train.to_numpy(), padded_contexts], axis=1)
+X_test_context = X_test.to_numpy()
+y_train_context = balanced_y_train.to_numpy()
 y_test_context = y_test.to_numpy()
 
 model = Sequential()
-model.add(Embedding(input_dim=len(tokenizer.word_index)+1, output_dim=128, input_length=maxlen))
-model.add(LSTM(192, dropout=0.4, recurrent_dropout=0.4))
+model.add(Embedding(input_dim=len(tokenizer.word_index)+1, output_dim=128))
 model.add(SpatialDropout1D(0.4))
-model.add(Dense(2, activation='softmax'))
+model.add(LSTM(192, dropout=0.4, recurrent_dropout=0.4))
+model.add(Dense(1, activation='sigmoid'))
 
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy', 'precision', 'recall',])
-model.fit(X_train_reshaped, y_train_context, epochs=5, validation_split=0.2)
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy', 'precision', 'recall',])
+model.fit(X_train_context, y_train_context, epochs=5, validation_split=0.2)
 
 loss, accuracy, precision, recall = model.evaluate(X_test_context, y_test_context)
 print('accuracy: ' + accuracy)
