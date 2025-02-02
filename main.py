@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from sklearn.ensemble import VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
@@ -9,8 +10,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.utils import resample, shuffle
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Embedding, LSTM, Dense, SpatialDropout1D
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Embedding, LSTM, Dense, SpatialDropout1D, Input, Concatenate, Dropout, Lambda
+from transformers import BertTokenizer, TFBertModel
 
 pd.options.mode.copy_on_write = True
 pd.set_option('future.no_silent_downcasting', True)
@@ -127,7 +129,7 @@ encoded_train_contexts = tokenizer.texts_to_sequences(balanced_training_set['con
 padded_train_contexts = pad_sequences(encoded_train_contexts, padding='post')
 encoded_test_contexts = tokenizer.texts_to_sequences(X_test['context'])
 padded_test_contexts = pad_sequences(encoded_test_contexts, padding='post')
-X_test.drop(columns=['context'], inplace=True)
+X_test_num = X_test.drop(columns=['context']).to_numpy()
 #max_index = max([max(seq) for seq in padded_contexts])
 #balanced_X_train.info()
 
@@ -153,8 +155,8 @@ y_pred = voting_clf.predict(X_test)
 #analyze the model's performance
 print(classification_report(y_test, y_pred)) """
 
-X_train_context = np.concatenate([balanced_X_train.to_numpy(), padded_train_contexts], axis=1)
-X_test_context = np.concatenate([X_test.to_numpy(), padded_test_contexts], axis=1)
+""" X_train_context = np.concatenate([balanced_X_train.to_numpy(), padded_train_contexts], axis=1)
+X_test_context = np.concatenate([X_test_num, padded_test_contexts], axis=1)
 y_train_context = balanced_y_train.to_numpy()
 y_test_context = y_test.to_numpy()
 
@@ -164,10 +166,58 @@ model.add(SpatialDropout1D(0.4))
 model.add(LSTM(192, dropout=0.4, recurrent_dropout=0.4))
 model.add(Dense(1, activation='sigmoid'))
 
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy', 'precision', 'recall',])
-model.fit(X_train_context, y_train_context, epochs=15, validation_split=0.2)
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy', 'precision', 'recall'])
+model.fit(X_train_context, y_train_context, epochs=15, validation_split=0.2, class_weight={0: 1.0, 1: 3.0})
 
 y_pred_prob = model.predict(X_test_context)
-y_pred = (y_pred_prob > 0.3).astype(int)
+y_pred = (y_pred_prob > 0.5).astype(int)
 
-print(classification_report(y_test_context, y_pred))
+print(classification_report(y_test_context, y_pred)) """
+
+
+bert_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+bert_train_context = bert_tokenizer(balanced_training_set['context'].tolist(), padding='longest', truncation=False, return_tensors='tf')
+bert_test_context = bert_tokenizer(X_test['context'].tolist(), padding='longest', truncation=False, return_tensors='tf')
+X_train_num = balanced_X_train.to_numpy()
+#X_test_num
+y_train_context = balanced_y_train.to_numpy()
+#y_test_context
+
+
+bert_model = TFBertModel.from_pretrained("bert-base-cased")
+input_ids = Input(shape=(bert_train_context["input_ids"].shape[1],), dtype=tf.int32, name="input_ids")
+attention_mask = Input(shape=(bert_train_context["attention_mask"].shape[1],), dtype=tf.int32, name="attention_mask")
+
+bert_output = Lambda(lambda x: bert_model(x[0], attention_mask=x[1])[1], output_shape=(768,))([input_ids, attention_mask])
+
+num_features_input = Input(shape=(X_train_num.shape[1],))
+
+num_dense = Dense(64, activation="relu")(num_features_input)
+num_dense = Dropout(0.3)(num_dense)
+
+merged = Concatenate()([bert_output, num_dense])
+merged = Dense(64, activation="relu")(merged)
+merged = Dropout(0.3)(merged)
+output = Dense(1, activation="sigmoid")(merged)
+
+model = Model(inputs=[input_ids, attention_mask, num_features_input], outputs=output)
+
+model.compile(optimizer='adam', loss="binary_crossentropy", metrics=["accuracy"])
+
+# Convert numerical data to tensors
+X_train_num = tf.convert_to_tensor(X_train_num, dtype=tf.float32)
+X_test_num = tf.convert_to_tensor(X_test_num, dtype=tf.float32)
+
+# Train model
+model.fit(
+    [bert_train_context["input_ids"], bert_train_context["attention_mask"], X_train_num],
+    y_train_context,
+    validation_split=0.2,
+    epochs=15,
+    batch_size=16
+)
+
+y_pred_probs = model.predict([bert_test_context["input_ids"], bert_test_context["attention_mask"], X_test_num])
+y_pred = (y_pred_probs > 0.5).astype(int)
+
+print(classification_report(y_test, y_pred))
