@@ -121,11 +121,14 @@ balanced_X_train = balanced_training_set.drop(columns=['label', 'context'])
 balanced_y_train = balanced_training_set.loc[:,'label']
 
 #encoding secrets and context using a tokenizer and adding padding to ensure uniform length
-tokenizer = Tokenizer()
+tokenizer = Tokenizer(num_words=657, oov_token="<OOV>")
 tokenizer.fit_on_texts(balanced_training_set['context'])
-encoded_contexts = tokenizer.texts_to_sequences(balanced_training_set['context'])
-padded_contexts = pad_sequences(encoded_contexts, padding='post')
-max_index = max([max(seq) for seq in padded_contexts])
+encoded_train_contexts = tokenizer.texts_to_sequences(balanced_training_set['context'])
+padded_train_contexts = pad_sequences(encoded_train_contexts, padding='post')
+encoded_test_contexts = tokenizer.texts_to_sequences(X_test['context'])
+padded_test_contexts = pad_sequences(encoded_test_contexts, padding='post')
+X_test.drop(columns=['context'], inplace=True)
+#max_index = max([max(seq) for seq in padded_contexts])
 #balanced_X_train.info()
 
 """ #initialsizing individual models for the voting classifier
@@ -150,21 +153,21 @@ y_pred = voting_clf.predict(X_test)
 #analyze the model's performance
 print(classification_report(y_test, y_pred)) """
 
-X_train_context = np.concatenate([balanced_X_train.to_numpy(), padded_contexts], axis=1)
-X_test_context = X_test.to_numpy()
+X_train_context = np.concatenate([balanced_X_train.to_numpy(), padded_train_contexts], axis=1)
+X_test_context = np.concatenate([X_test.to_numpy(), padded_test_contexts], axis=1)
 y_train_context = balanced_y_train.to_numpy()
 y_test_context = y_test.to_numpy()
 
 model = Sequential()
-model.add(Embedding(input_dim=len(tokenizer.word_index)+1, output_dim=128))
+model.add(Embedding(input_dim=9476, output_dim=128))
 model.add(SpatialDropout1D(0.4))
 model.add(LSTM(192, dropout=0.4, recurrent_dropout=0.4))
 model.add(Dense(1, activation='sigmoid'))
 
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy', 'precision', 'recall',])
-model.fit(X_train_context, y_train_context, epochs=5, validation_split=0.2)
+model.fit(X_train_context, y_train_context, epochs=15, validation_split=0.2)
 
-loss, accuracy, precision, recall = model.evaluate(X_test_context, y_test_context)
-print('accuracy: ' + accuracy)
-print('precision: ' + precision)
-print('recall: ' + recall)
+y_pred_prob = model.predict(X_test_context)
+y_pred = (y_pred_prob > 0.3).astype(int)
+
+print(classification_report(y_test_context, y_pred))
