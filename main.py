@@ -55,7 +55,7 @@ for type in file_types:
 df['has_paranthesis'] = raw_db['secret'].apply(lambda x: 1 if ('(' or ')') in x else 0)
 df['has_brackets'] = raw_db['secret'].apply(lambda x: 1 if ('[' or ']') in x else 0)
 df['has_period'] = raw_db['secret'].apply(lambda x: 1 if '.' in x else 0)
-df['has_Password'] = raw_db['secret'].apply(lambda x: 1 if 'Password' in x else 0)
+df['has_password'] = raw_db['secret'].apply(lambda x: 1 if 'Password' in x else 0)
 df['has_space'] = raw_db['secret'].apply(lambda x: 1 if ' ' in x else 0)
 
 #converting datatypes of columns to (binary) numerical
@@ -175,7 +175,7 @@ y_pred = (y_pred_prob > 0.5).astype(int)
 print(classification_report(y_test_context, y_pred)) """
 
 
-bert_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+bert_tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
 bert_train_context = bert_tokenizer(balanced_training_set['context'].tolist(), padding='longest', truncation=False, return_tensors='tf')
 bert_test_context = bert_tokenizer(X_test['context'].tolist(), padding='longest', truncation=False, return_tensors='tf')
 X_train_num = balanced_X_train.to_numpy()
@@ -213,7 +213,7 @@ model.fit(
     [bert_train_context["input_ids"], bert_train_context["attention_mask"], X_train_num],
     y_train_context,
     validation_split=0.2,
-    epochs=15,
+    epochs=3,
     batch_size=16
 )
 
