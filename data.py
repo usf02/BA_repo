@@ -48,3 +48,38 @@ for column in ['label', 'is_template', 'in_url', 'is_multiline']:
     df[column] = pd.to_numeric(df[column])
     
 df.to_csv("Docs/processed_data.csv", index=False)
+
+#defining the function that extracts the context of the secret (3 lines before and after) from the source file
+def extract_context(file_name, secret):
+    try:
+        with open("Docs/Files/" + file_name,"r", encoding='utf8') as f:
+            lines = f.readlines()
+            f.close()
+        
+        context = ''
+        
+        for i, line in enumerate(lines):
+            if (secret == line) or (secret in line):
+                secret_index = i
+                    
+        if ('.js' in file_name):
+            secret_pos = lines[secret_index].find(secret)
+            start_index = max(secret_pos - 100, 0)
+            end_index = min(secret_pos + len(secret) + 100, len(lines[secret_index]))
+            context = lines[secret_index][start_index:end_index]
+            return context
+        else:
+            start_index = max(secret_index - 3, 0)
+            end_index = min(secret_index + 4, len(lines))
+            context = context.join(lines[start_index:end_index])
+            return context
+    
+    except FileNotFoundError:
+        return f"File {file_name} not found"
+    except Exception as e:
+        return f"Error: {e}"
+
+#apply the function to the dataset
+df['context'] = raw_db.apply(lambda row: extract_context(row['file_identifier'], row['secret']), axis=1)
+
+df.to_csv("Docs/processed_data_context.csv", index=False)
