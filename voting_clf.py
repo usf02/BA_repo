@@ -30,7 +30,7 @@ minority_upsampled = resample(
 #joining both classes back together and shuffling
 training_set = pd.concat([majority_class, minority_upsampled], axis=0)
 training_set = shuffle(training_set, random_state=42)
-training_set.to_csv("Docs/upsampled_training_set.csv", index=False)
+training_set.to_csv("Docs/upsampled_set.csv", index=False)
 
 # separating features and target again
 X_train = training_set.drop(columns=['label'])

@@ -1,4 +1,6 @@
 import pandas as pd
+import re
+import subprocess
 
 # Load dataset (assuming SecretBench format)
 raw_db = pd.read_csv("Docs/secretbench.csv")
@@ -47,31 +49,60 @@ for column in ['label', 'is_template', 'in_url', 'is_multiline']:
     df[column] = df[column].map({'Y':1, 'N':0})
     df[column] = pd.to_numeric(df[column])
     
-df.to_csv("Docs/processed_data.csv", index=False)
+print(df.info())
+#df.to_csv("Docs/processed_data.csv", index=False)
 
 #defining the function that extracts the context of the secret (3 lines before and after) from the source file
-def extract_context(file_name, secret):
+def extract_context(id):
+    file_name = raw_db.loc[raw_db['id'] == id, 'file_identifier'].iloc[0]
+    secret_index = raw_db.loc[raw_db['id'] == id, 'start_line'].iloc[0] - 1
+    secret = raw_db.loc[raw_db['id'] == id, 'secret'].iloc[0]
+    
     try:
         with open("Docs/Files/" + file_name,"r", encoding='utf8') as f:
             lines = f.readlines()
             f.close()
-        
-        context = ''
-        
-        for i, line in enumerate(lines):
-            if (secret == line) or (secret in line):
-                secret_index = i
                     
         if ('.js' in file_name):
-            secret_pos = lines[secret_index].find(secret)
-            start_index = max(secret_pos - 100, 0)
-            end_index = min(secret_pos + len(secret) + 100, len(lines[secret_index]))
-            context = lines[secret_index][start_index:end_index]
+            # Check if the file is minified
+            avg_line_length = sum(len(line) for line in lines) / max(len(lines), 1)
+            is_minified = avg_line_length > 200  # Adjust threshold if needed 
+
+            if is_minified:
+                if len(lines) > 1:
+                    content = ''.join(lines)
+                else:
+                    content = lines[0]
+                
+                # Attempt to split intelligently if the file is minified
+                lines = re.split(r'(;|\{|,)', content)
+
+                # Merge back to keep structure
+                structured_lines = []
+                temp_line = ""
+                for segment in lines:
+                    temp_line += segment
+                    if segment in {';', '{', ','}:
+                        structured_lines.append(temp_line + '\n')
+                        temp_line = ""
+                if temp_line:
+                    structured_lines.append(temp_line + '\n')
+                
+                lines = structured_lines
+                for i, line in enumerate(lines):
+                    if (secret == line) or (secret in line):
+                        secret_index = i
+
+            # Extract the desired context
+            start_index = max(secret_index - 3, 0)
+            end_index = min(secret_index + 4, len(lines))
+            context = ''.join(lines[start_index:end_index])
+
             return context
         else:
             start_index = max(secret_index - 3, 0)
             end_index = min(secret_index + 4, len(lines))
-            context = context.join(lines[start_index:end_index])
+            context = ''.join(lines[start_index:end_index])
             return context
     
     except FileNotFoundError:
@@ -80,6 +111,7 @@ def extract_context(file_name, secret):
         return f"Error: {e}"
 
 #apply the function to the dataset
-df['context'] = raw_db.apply(lambda row: extract_context(row['file_identifier'], row['secret']), axis=1)
+df['context'] = raw_db.apply(lambda row: extract_context(row['id']), axis=1)
 
-df.to_csv("Docs/processed_data_context.csv", index=False)
+print(df.info())
+#df.to_csv("Docs/processed_data_context.csv", index=False)
