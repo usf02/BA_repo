@@ -5,7 +5,7 @@ import subprocess
 # Load dataset (assuming SecretBench format)
 raw_db = pd.read_csv("Docs/secretbench.csv")
 raw_db.loc[:, 'secret'] = raw_db.loc[:, 'secret'].str[1:-1]
-raw_db = raw_db[raw_db["file_type"].isin(["java", "py", "js", "rb", "nix"])]
+raw_db = raw_db[raw_db["file_type"].isin(["java", "py", "rb", "nix", "js"])]
 
 SECRET_KEYWORDS = ["password", "token", "api", "key", "auth"]
 SPECIAL_CHARACTERS = [':', '{', '}','def', 'class', 'do', 'return', 'end', '(', ')']
@@ -48,14 +48,15 @@ df['in_test_path'] = raw_db['file_path'].apply(lambda x: 1 if ('test' or 'exampl
 for column in ['label', 'is_template', 'in_url', 'is_multiline']:
     df[column] = df[column].map({'Y':1, 'N':0})
     df[column] = pd.to_numeric(df[column])
-    
+
 print(df.info())
 #df.to_csv("Docs/processed_data.csv", index=False)
 
-#defining the function that extracts the context of the secret (3 lines before and after) from the source file
+#the function extracts the context of the secret (3 lines before and after) from the source file
 def extract_context(id):
     file_name = raw_db.loc[raw_db['id'] == id, 'file_identifier'].iloc[0]
-    secret_index = raw_db.loc[raw_db['id'] == id, 'start_line'].iloc[0] - 1
+    secret_start = raw_db.loc[raw_db['id'] == id, 'start_line'].iloc[0] - 1
+    secret_end = raw_db.loc[raw_db['id'] == id, 'end_line'].iloc[0] - 1
     secret = raw_db.loc[raw_db['id'] == id, 'secret'].iloc[0]
     
     try:
@@ -91,17 +92,18 @@ def extract_context(id):
                 lines = structured_lines
                 for i, line in enumerate(lines):
                     if (secret == line) or (secret in line):
-                        secret_index = i
+                        secret_start = i
+                        secret_end = i
 
             # Extract the desired context
-            start_index = max(secret_index - 3, 0)
-            end_index = min(secret_index + 4, len(lines))
+            start_index = max(secret_start - 3, 0)
+            end_index = min(secret_end + 4, len(lines))
             context = ''.join(lines[start_index:end_index])
 
             return context
         else:
-            start_index = max(secret_index - 3, 0)
-            end_index = min(secret_index + 4, len(lines))
+            start_index = max(secret_start - 3, 0)
+            end_index = min(secret_end + 4, len(lines))
             context = ''.join(lines[start_index:end_index])
             return context
     
@@ -112,6 +114,7 @@ def extract_context(id):
 
 #apply the function to the dataset
 df['context'] = raw_db.apply(lambda row: extract_context(row['id']), axis=1)
+df.drop(df[df["context"].str.contains(".java not found", na=False)].index, inplace=True)
 
 print(df.info())
 #df.to_csv("Docs/processed_data_context.csv", index=False)
