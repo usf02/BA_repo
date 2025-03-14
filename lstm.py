@@ -1,20 +1,23 @@
 import pandas as pd
 import numpy as np
-from sklearn.metrics import classification_report
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.utils import resample, shuffle
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Embedding, LSTM, Dense, SpatialDropout1D, Input, Concatenate, Dropout, Lambda
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, LSTM, Dense, SpatialDropout1D
 
-df = pd.read_csv("Docs/processed_data_context.csv")
+df = pd.read_csv("Docs/raw_set_context.csv")
 df.dropna(inplace=True, ignore_index=True)
+df.info()
 
 #split the dataset into training and test sets
-X = df.drop(labels=['label'], axis=1)
+X = df.drop(labels=['label', 'id'], axis=1)
 y = df['label']
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y)
 
 #joining the training and test sets for easier manipulation, then defining the majority and minority classes
 training_set = pd.concat([X_train, y_train], axis=1)
@@ -31,8 +34,9 @@ minority_upsampled = resample(
 
 #joining both classes back together and shuffling
 training_set = pd.concat([majority_class, minority_upsampled], axis=0)
-training_set = shuffle(training_set, random_state=42)
-training_set.to_csv("Docs/upsampled_set_context.csv", index=False)
+training_set = shuffle(training_set)
+
+test_set = pd.concat([X_test, y_test], axis=1)
 
 # separating features and target again and preparing features for model
 X_train_num = training_set.drop(columns=['label', 'context'])
@@ -61,10 +65,24 @@ model.add(SpatialDropout1D(0.4))
 model.add(LSTM(192, dropout=0.4, recurrent_dropout=0.4))
 model.add(Dense(1, activation='sigmoid'))
 
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy', 'precision', 'recall'])
-model.fit(X_train, y_train, epochs=10, validation_split=0.2)
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+model.fit(X_train, y_train, epochs=5, validation_split=0.2)
+
+loss, accuracy = model.evaluate(X_test, y_test)
+print(f'Test Accuracy: {accuracy * 100:.2f}%')
 
 y_pred_prob = model.predict(X_test)
 y_pred = (y_pred_prob > 0.5).astype(int)
+test_set['predictions'] = y_pred
+test_set.to_csv("Docs/lstm_predictions.csv")
 
 print(classification_report(y_test, y_pred))
+
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(6, 5))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['false secret', 'true secret'], yticklabels=['false secret', 'true secret'])
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.title('Confusion Matrix - Test Dataset')
+plt.tight_layout()
+plt.show()

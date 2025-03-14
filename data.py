@@ -1,6 +1,5 @@
 import pandas as pd
 import re
-import subprocess
 
 # Load dataset (assuming SecretBench format)
 raw_db = pd.read_csv("Docs/secretbench.csv")
@@ -13,7 +12,6 @@ SPECIAL_CHARACTERS = [':', '{', '}','def', 'class', 'do', 'return', 'end', '(', 
 #create a new df with select features
 df = raw_db.drop(
     labels=[
-        'id',
         'secret',
         'repo_name',
         'domain',
@@ -49,8 +47,7 @@ for column in ['label', 'is_template', 'in_url', 'is_multiline']:
     df[column] = df[column].map({'Y':1, 'N':0})
     df[column] = pd.to_numeric(df[column])
 
-print(df.info())
-#df.to_csv("Docs/processed_data.csv", index=False)
+df.to_csv("Docs/raw_set.csv", index=False)
 
 #the function extracts the context of the secret (3 lines before and after) from the source file
 def extract_context(id):
@@ -115,6 +112,6 @@ def extract_context(id):
 #apply the function to the dataset
 df['context'] = raw_db.apply(lambda row: extract_context(row['id']), axis=1)
 df.drop(df[df["context"].str.contains(".java not found", na=False)].index, inplace=True)
+df.info()
 
-print(df.info())
-#df.to_csv("Docs/processed_data_context.csv", index=False)
+df.to_csv("Docs/raw_set_context.csv", index=False)
