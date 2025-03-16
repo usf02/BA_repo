@@ -18,24 +18,38 @@ X = df.drop(columns=['label', 'secret', 'commit_date'])
 y = df['label']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y)
 
-training_set = pd.concat([X_train, X_train], axis=1)
+#joining the training and test sets for easier manipulation, then defining the majority and minority classes
+training_set = pd.concat([X_train, y_train], axis=1)
+majority_class = training_set.loc[training_set['label'] == 0]
+minority_class = training_set.loc[training_set['label'] == 1]
+
+#upsampling the minority class in the training set to match the majority class
+minority_upsampled = resample(
+    minority_class,
+    replace=True,
+    n_samples=len(majority_class),
+    random_state=42
+)
+
+#joining both classes back together and shuffling
+training_set = pd.concat([majority_class, minority_upsampled], axis=0)
+training_set = shuffle(training_set)
+
 test_set = pd.concat([X_test, y_test], axis=1)
-for df in [X_train, X_test]:
-    df.drop(columns='id', inplace=True)
 
 # separating features and target again and preparing features for model
-X_train_num = X_train.drop(columns=['context'])
-X_test_num = X_test.drop(columns=['context'])
-y_train = y_train.to_numpy()
-y_test = y_test.to_numpy()
+X_train_num = training_set.drop(columns=['label', 'context', 'id'])
+X_test_num = X_test.drop(columns=['context', 'id'])
+y_train = training_set['label'].to_numpy()
+y_test = test_set['label'].to_numpy()
 
 #encoding secrets and context using a tokenizer and adding padding to ensure uniform length
 tokenizer = Tokenizer()
-tokenizer.fit_on_texts(X_train['context'])
+tokenizer.fit_on_texts(training_set['context'])
 vocab_size = len(tokenizer.word_index) + 1
 max_token_length = 200
 
-train_context_enc = tokenizer.texts_to_sequences(X_train['context'])
+train_context_enc = tokenizer.texts_to_sequences(training_set['context'])
 train_context_pad = pad_sequences(train_context_enc, padding='post', maxlen=max_token_length)
 
 test_context_enc = tokenizer.texts_to_sequences(X_test['context'])
@@ -51,18 +65,18 @@ model.add(LSTM(192, dropout=0.4, recurrent_dropout=0.4))
 model.add(Dense(1, activation='sigmoid'))
 
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-model.fit(X_train, y_train, epochs=10, validation_split=0.2)
+model.fit(X_train, y_train, epochs=15, validation_split=0.2)
 
 loss, accuracy = model.evaluate(X_test, y_test)
 print(f'Test Accuracy: {accuracy * 100:.2f}%')
 
 y_pred_prob = model.predict(X_test)
 y_pred = (y_pred_prob > 0.5).astype(int)
-test_set['prediction'] = y_pred
-test_set.to_json("Docs/lstm-10epochs/pred.json", orient='records', lines=False, indent=4)
+test_set['predictions'] = y_pred
+test_set.to_csv("Docs/lstm-upsampled-15epochs/pred.csv", index=False)
 
 report = classification_report(y_test, y_pred)
-with open("Docs/lstm-10epochs/results.txt", 'w') as f:
+with open("Docs/lstm-upsampled-15epochs/results.txt", 'w') as f:
     f.write(report)
     f.close()
 
@@ -73,5 +87,5 @@ plt.xlabel('Predicted')
 plt.ylabel('Actual')
 plt.title('Confusion Matrix - Test Dataset')
 plt.tight_layout()
-plt.savefig('Docs/lstm-10epochs/cm.png')
+plt.savefig('Docs/lstm-upsampled-15epochs/cm.png')
 plt.show()
