@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
-from sklearn.utils import resample, shuffle
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Sequential
@@ -47,7 +46,7 @@ X_test = np.concatenate([X_test_num.to_numpy(), test_context_pad], axis=1)
 model = Sequential()
 model.add(Embedding(input_dim=vocab_size, output_dim=128))
 model.add(SpatialDropout1D(0.4))
-model.add(LSTM(192, dropout=0.4, recurrent_dropout=0.4))
+model.add(LSTM(256, dropout=0.4, recurrent_dropout=0.4))
 model.add(Dense(1, activation='sigmoid'))
 
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])

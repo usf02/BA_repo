@@ -4,15 +4,15 @@ import re
 # Load dataset (assuming SecretBench format)
 raw_db = pd.read_csv("Docs/secretbench.csv")
 raw_db.loc[:, 'secret'] = raw_db.loc[:, 'secret'].str[1:-1]
-raw_db = raw_db[raw_db["file_type"].isin(["java", "py", "rb", "nix", "js"])]
+raw_db = raw_db[raw_db["file_type"].isin(["js", "java", "py", "rb", "nix"])]
 
-SECRET_KEYWORDS = ["password", "token", "api", "key", "auth"]
-SPECIAL_CHARACTERS = [':', '{', '}','def', 'class', 'do', 'return', 'end', '(', ')']
+NULL_KEYWORDS = ['null', 'nil', 'undefined', 'none', 'true', 'false']
 
 #create a new df with select features
 df = raw_db.drop(
     labels=[
-        'secret',
+        #'id',
+        #'secret',
         'repo_name',
         'domain',
         'commit_id',
@@ -39,6 +39,11 @@ df['has_brackets'] = raw_db['secret'].apply(lambda x: 1 if ('[' or ']') in x els
 df['has_period'] = raw_db['secret'].apply(lambda x: 1 if '.' in x else 0)
 df['has_password'] = raw_db['secret'].apply(lambda x: 1 if 'Password' in x else 0)
 df['has_space'] = raw_db['secret'].apply(lambda x: 1 if ' ' in x else 0)
+df['has_tag'] = raw_db['secret'].apply(lambda x: 1 if 'begin private key' in x.lower() else 0 )
+df['startswith_$'] = raw_db['secret'].apply(lambda x: 1 if x.startswith('$') else 0 )
+df['has_null'] = raw_db['secret'].apply(lambda x: 1 if any(word in x.lower() for word in NULL_KEYWORDS) else 0)
+df['has_arrow'] = df['secret'].apply(lambda x: 1 if '->' in x else 0)
+df['is_numerical'] = df['secret'].apply(lambda x: 1 if x.isdigit() else 0)
 df['in_config_path'] = raw_db['file_path'].apply(lambda x: 1 if 'config' in x.lower() else 0)
 df['in_test_path'] = raw_db['file_path'].apply(lambda x: 1 if ('test' or 'example') in x.lower() else 0)
 
@@ -64,7 +69,7 @@ def extract_context(id):
         if ('.js' in file_name):
             # Check if the file is minified
             avg_line_length = sum(len(line) for line in lines) / max(len(lines), 1)
-            is_minified = avg_line_length > 200  # Adjust threshold if needed 
+            is_minified = avg_line_length > 200
 
             if is_minified:
                 if len(lines) > 1:
@@ -72,7 +77,7 @@ def extract_context(id):
                 else:
                     content = lines[0]
                 
-                # Attempt to split intelligently if the file is minified
+                # Attempt to split manually if the file is minified
                 lines = re.split(r'(;|\{|,)', content)
 
                 # Merge back to keep structure
@@ -88,21 +93,30 @@ def extract_context(id):
                 
                 lines = structured_lines
                 for i, line in enumerate(lines):
-                    if (secret == line) or (secret in line):
+                    if secret in line:
                         secret_start = i
                         secret_end = i
 
             # Extract the desired context
             start_index = max(secret_start - 3, 0)
             end_index = min(secret_end + 4, len(lines))
-            context = ''.join(lines[start_index:end_index])
+            full_context = ''.join(lines[start_index:end_index])
+            
+            lines_before = ''.join(lines[start_index:secret_start])
+            lines_after = ''.join(lines[secret_end+1:end_index])
+            context = ''.join([lines_before, lines_after])
 
-            return context
+            return full_context, context, lines_before, lines_after
         else:
             start_index = max(secret_start - 3, 0)
             end_index = min(secret_end + 4, len(lines))
-            context = ''.join(lines[start_index:end_index])
-            return context
+            full_context = ''.join(lines[start_index:end_index])
+
+            lines_before = ''.join(lines[start_index:secret_start])
+            lines_after = ''.join(lines[secret_end+1:end_index])
+            context = ''.join([lines_before, lines_after])
+            
+            return full_context, context, lines_before, lines_after
     
     except FileNotFoundError:
         return f"File {file_name} not found"
@@ -110,10 +124,13 @@ def extract_context(id):
         return f"Error: {e}"
 
 #apply the function to the dataset
-df['context'] = raw_db.apply(lambda row: extract_context(row['id']), axis=1)
-df.drop(df[df["context"].str.contains(".java not found", na=False)].index, inplace=True)
-print(df.duplicated(subset=['secret', 'context']).sum())
-df.drop_duplicates(subset=['secret', 'context'], keep='first')
+df[['full_context', 'context_w/o_secret', 'context_before', 'context_after']] = raw_db.apply(lambda row: pd.Series(extract_context(row['id'])), axis=1)
 df.info()
 
-df.to_json("Docs/raw_set_context.json", orient='records', lines=False, indent=4)
+df.drop(df[df['full_context'].str.contains(".java not found", na=False)].index, inplace=True)
+print(df.duplicated(subset=['secret', 'full_context']).sum())
+df.drop_duplicates(subset=['secret', 'full_context'], keep='first', inplace=True)
+df.dropna(inplace=True, ignore_index=True)
+df.info()
+
+df.to_json("Docs/dataset.json", orient='records', lines=False, indent=4)
