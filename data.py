@@ -9,30 +9,8 @@ raw_db = raw_db[raw_db["file_type"].isin(["js", "java", "py", "rb", "nix"])]
 NULL_KEYWORDS = ['null', 'nil', 'undefined', 'none', 'true', 'false']
 
 #create a new df with select features
-df = raw_db.drop(
-    labels=[
-        #'id',
-        #'secret',
-        'repo_name',
-        'domain',
-        'commit_id',
-        'file_path',
-        'file_type',
-        'start_line',
-        'end_line',
-        'start_column',
-        'end_column',
-        'committer_email',
-        'commit_date',
-        'character_set',
-        'has_words',
-        'category',
-        'file_identifier',
-        'repo_identifier',
-        'comment'],
-    inplace=False,
-    axis=1
-)
+#df = raw_db.drop(labels=[#'id',#'secret','repo_name','domain','commit_id','file_path','file_type','start_line','end_line','start_column','end_column','committer_email','commit_date','character_set','has_words','category','file_identifier','repo_identifier','comment'], inplace=False, axis=1)
+df = raw_db
 
 df['has_paranthesis'] = raw_db['secret'].apply(lambda x: 1 if ('(' or ')') in x else 0)
 df['has_brackets'] = raw_db['secret'].apply(lambda x: 1 if ('[' or ']') in x else 0)
